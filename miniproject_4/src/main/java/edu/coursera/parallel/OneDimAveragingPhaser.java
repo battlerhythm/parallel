@@ -111,5 +111,53 @@ public final class OneDimAveragingPhaser {
             final double[] myNew, final double[] myVal, final int n,
             final int tasks) {
 
+        Phaser ph = new Phaser(0);
+        ph.bulkRegister(tasks);
+
+        Thread[] threads = new Thread[tasks];
+
+        for (int i = 0; i < tasks; ++i){
+            int j = i;
+            threads[i] = new Thread(() -> {
+                double[] threadPrivateMyVal = myVal;
+                double[] threadPrivateMyNew = myNew;
+
+//                double[] myVal = this.myVal;
+//                double[] myNew = this.myNew;
+
+                for (int iter = 0; iter < iterations; ++iter){
+                    // Compute leftmost boundary element for group
+                    int left = j * (n/ tasks) + 1;
+                    threadPrivateMyNew[left] = (threadPrivateMyVal[left - 1] + threadPrivateMyVal[left + 1]) / 2.0;
+
+                    // Compute rightmost boundary element for group
+                    int right = (j + 1) * (n / tasks);
+                    threadPrivateMyNew[right] = (threadPrivateMyVal[right - 1] + threadPrivateMyVal[right + 1]) / 2.0;
+
+                    // Signal arrival on phaser ph
+                    int currentPhase = ph.arrive();
+
+                    for (int k = left + 1; k <= right - 1; ++k) {
+                        threadPrivateMyNew[k] = (threadPrivateMyVal[k -1] + threadPrivateMyVal[k + 1]) / 2.0;
+                    }
+
+                    // Wait for previous phase to complete before advancing
+                    ph.awaitAdvance(currentPhase);
+
+                    double[] temp = threadPrivateMyNew;
+                    threadPrivateMyNew = threadPrivateMyVal;
+                    threadPrivateMyVal = temp;
+                }
+
+            });
+            threads[i].start();
+        }
+
+        for (int i = 0; i < tasks; ++i)
+            try {
+                threads[i].join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
     }
 }
